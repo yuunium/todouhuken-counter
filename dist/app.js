@@ -31,6 +31,8 @@ let mapMetric = 'score';
 let currentPref = null;
 let mapData = [];
 let zoom = 1;
+let pickerZoom = 1;
+let pickerPrefectureId = null;
 let confirmCallback = null;
 
 function toast(message) {
@@ -95,7 +97,7 @@ function populateEntryForm() {
   $('#history-prefecture').insertAdjacentHTML('beforeend', `<optgroup label="地方">${REGIONS.map(r => `<option value="${r.id}">${r.name}</option>`).join('')}</optgroup>` + groups);
   $('#reason-options').innerHTML = REASONS.map(r => `<label class="reason-option"><input type="radio" name="reason" value="${r.id}" required><span class="reason-points">${r.points}<small>pt</small></span><span>${r.name}</span><i></i></label>`).join('');
   $('#history-reason').insertAdjacentHTML('beforeend', REASONS.map(r => `<option value="${r.id}">${r.name}</option>`).join(''));
-  $('#visit-date').value = localDate();
+  $('#visit-date').value = '';
 }
 function updateEntryPreview() {
   const id = Number($('#visit-prefecture').value);
@@ -131,7 +133,7 @@ $('#visit-form').addEventListener('submit', event => {
 });
 function resetEntry() {
   editingId = null;
-  $('#visit-form').reset(); $('#visit-date').value = localDate();
+  $('#visit-form').reset(); $('#visit-date').value = '';
   $('#entry-heading').textContent = '来訪を記録する';
   $('#save-visit').innerHTML = `来訪を登録${icon('check')}`;
   $('#cancel-edit').hidden = true; updateEntryPreview();
@@ -213,6 +215,7 @@ async function loadMap() {
     const response = await fetch('./assets/map-data.json');
     if (!response.ok) throw new Error('Map unavailable');
     mapData = await response.json();
+    renderPrefecturePicker();
     const paths = mapData.map(p => {
       const transform = p.id === 47 ? 'transform="translate(390,-1050)"' : '';
       const x = p.x + (p.id === 47 ? 390 : 0);
@@ -233,12 +236,65 @@ async function loadMap() {
     });
     $('#download-map').disabled = false;
   } catch {
+    $('#open-prefecture-picker').disabled = true;
+    $('#prefecture-picker-hint').textContent = '地図を読み込めませんでした。一覧から選択してください。';
     $('#map-stage').innerHTML = '<div class="map-loading">地図を読み込めませんでした。<a href="#record">一覧から記録する →</a></div>';
     $('#download-map').disabled = true;
     $('#zoom-in').disabled = true;
     $('#zoom-out').disabled = true;
   }
 }
+function renderPrefecturePicker() {
+  const shapes = mapData.map(p => {
+    const transform = p.id === 47 ? 'transform="translate(390,-1050)"' : '';
+    const x = p.x + (p.id === 47 ? 390 : 0);
+    const y = p.y - (p.id === 47 ? 1050 : 0);
+    const name = p.name === '北海道' ? p.name : p.name.replace(/[都府県]$/, '');
+    return `<g class="picker-prefecture" data-pick-prefecture="${p.id}" role="button" tabindex="0" aria-label="${p.name}を選択" aria-pressed="false"><title>${p.name}</title><path class="pref-shape" d="${p.d}" ${transform}/><text class="picker-prefecture-name" x="${x}" y="${y + 10}">${name}</text></g>`;
+  }).join('');
+  $('#picker-map-stage').innerHTML = `<svg class="pref-picker-svg" xmlns="http://www.w3.org/2000/svg" viewBox="-90 -80 2180 2080" aria-label="都道府県を選択する日本地図">${shapes}</svg>`;
+  $('#open-prefecture-picker').disabled = false;
+}
+function selectPickerPrefecture(id) {
+  pickerPrefectureId = PREFECTURES.some(p => p.id === id) ? id : null;
+  const pref = PREFECTURES.find(p => p.id === pickerPrefectureId);
+  $('#picker-selection').textContent = pref ? `${pref.name}（${REGIONS.find(r => r.id === pref.region).name}）` : '都道府県を選択してください';
+  $('#confirm-prefecture').disabled = !pref;
+  $$('[data-pick-prefecture]').forEach(el => el.setAttribute('aria-pressed', Number(el.dataset.pickPrefecture) === pickerPrefectureId));
+}
+function setPickerZoom(value) {
+  pickerZoom = Math.min(3, Math.max(1, value));
+  const svg = $('.pref-picker-svg');
+  if (!svg) return;
+  svg.style.width = `${pickerZoom * 100}%`; svg.style.height = `${pickerZoom * 100}%`;
+  $('#picker-zoom-reset').textContent = `${Math.round(pickerZoom * 100)}%`;
+  $('#picker-zoom-out').disabled = pickerZoom === 1;
+  $('#picker-zoom-in').disabled = pickerZoom === 3;
+}
+$('#open-prefecture-picker').addEventListener('click', () => {
+  selectPickerPrefecture(Number($('#visit-prefecture').value));
+  setPickerZoom(1);
+  $('#picker-map-stage').scrollTo(0, 0);
+  showDialog($('#prefecture-picker-dialog'));
+});
+$('#picker-map-stage').addEventListener('click', event => {
+  const pref = event.target.closest('[data-pick-prefecture]');
+  if (pref) selectPickerPrefecture(Number(pref.dataset.pickPrefecture));
+});
+$('#picker-map-stage').addEventListener('keydown', event => {
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  const pref = event.target.closest('[data-pick-prefecture]');
+  if (pref) { event.preventDefault(); selectPickerPrefecture(Number(pref.dataset.pickPrefecture)); }
+});
+$('#confirm-prefecture').addEventListener('click', () => {
+  if (!pickerPrefectureId) return;
+  $('#visit-prefecture').value = pickerPrefectureId;
+  updateEntryPreview();
+  $('#prefecture-picker-dialog').close();
+});
+$('#picker-zoom-in').addEventListener('click', () => setPickerZoom(pickerZoom + .5));
+$('#picker-zoom-out').addEventListener('click', () => setPickerZoom(pickerZoom - .5));
+$('#picker-zoom-reset').addEventListener('click', () => setPickerZoom(1));
 function updateMapValues() {
   const summary = summarize(state);
   $$('[data-map-id]').forEach(group => {

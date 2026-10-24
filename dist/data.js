@@ -12,10 +12,4 @@ const names = ['北海道', '青森県', '岩手県', '宮城県', '秋田県', 
 export const PREFECTURES = names.map((name, index) => ({ id: index + 1, name, region: REGIONS.find(r => r.ids.includes(index + 1)).id }));
 export const STORAGE_KEY = 'tabinoato:v1';
 
-export const REASONS = [
-  { id: 'solo', name: '単独、ラボセ', points: 1 },
-  { id: 'special', name: '大特典会', points: 2 },
-  { id: 'festival', name: '対バン、フェス', points: 3 },
-  { id: 'release', name: 'リリイベ', points: 4 },
-  { id: 'other', name: 'その他イベント', points: 5 },
-];
+export const MAX_COUNT = 999999;

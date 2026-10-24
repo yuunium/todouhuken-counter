@@ -1,5 +1,5 @@
-import { PREFECTURES, REGIONS, REASONS, STORAGE_KEY } from './data.js';
-import { emptyState, parseState, summarize, validateVisit, validMultiplier, format } from './model.js';
+import { PREFECTURES, REGIONS, MAX_COUNT, STORAGE_KEY } from './data.js';
+import { emptyState, parseState, summarize, setPrefectureCount, validCount, validMultiplier, format } from './model.js';
 
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
@@ -26,7 +26,6 @@ renderIcons();
 let state = emptyState();
 let storageIssue = false;
 let toastTimer;
-let editingId = null;
 let mapMetric = 'score';
 let currentPref = null;
 let mapData = [];
@@ -43,7 +42,10 @@ function toast(message) {
 }
 try {
   const saved = localStorage.getItem(STORAGE_KEY);
-  if (saved) state = parseState(saved);
+  if (saved) {
+    state = parseState(saved);
+    if (JSON.parse(saved).version !== state.version) localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }
 } catch {
   storageIssue = true;
   toast('保存済みの記録を読み込めませんでした。設定からバックアップを読み込めます。');
@@ -86,109 +88,73 @@ function updateUI() {
   $('#region-grid').innerHTML = summary.regions.map(r => `<a class="region-card" href="#record/${r.id}"><div class="region-card-top"><h3>${r.name}</h3><span>${r.visited} / ${r.ids.length} 訪問済み</span></div><p class="eyebrow">${r.en}</p><div class="region-card-bottom"><span><strong>${format(r.visits)}</strong>回</span><span>×${format(r.multiplier)} → ${format(r.score)} pt</span></div><div class="progress-track"><span style="width:${r.visited / r.ids.length * 100}%"></span></div></a>`).join('');
   updateMapValues();
   renderHistory();
-  renderReasonSummary(summary);
   updateEntryPreview();
   updateSaveStatus();
 }
 
 function populateEntryForm() {
-  const groups = REGIONS.map(r => `<optgroup label="${r.name}">${PREFECTURES.filter(p => p.region === r.id).map(p => `<option value="${p.id}">${p.name}</option>`).join('')}</optgroup>`).join('');
-  $('#visit-prefecture').insertAdjacentHTML('beforeend', groups);
-  $('#history-prefecture').insertAdjacentHTML('beforeend', `<optgroup label="地方">${REGIONS.map(r => `<option value="${r.id}">${r.name}</option>`).join('')}</optgroup>` + groups);
-  $('#reason-options').innerHTML = REASONS.map(r => `<label class="reason-option"><input type="radio" name="reason" value="${r.id}" required><span class="reason-points">${r.points}<small>pt</small></span><span>${r.name}</span><i></i></label>`).join('');
-  $('#history-reason').insertAdjacentHTML('beforeend', REASONS.map(r => `<option value="${r.id}">${r.name}</option>`).join(''));
-  $('#visit-date').value = '';
+  $('#history-prefecture').insertAdjacentHTML('beforeend', REGIONS.map(r => `<option value="${r.id}">${r.name}</option>`).join(''));
+}
+function selectEntryPrefecture(id) {
+  const pref = PREFECTURES.find(p => p.id === id);
+  $('#visit-prefecture').value = pref ? pref.id : '';
+  $('#selected-prefecture').textContent = pref ? `${pref.name}（${REGIONS.find(r => r.id === pref.region).name}）` : '都道府県が選択されていません';
+  $('#selected-prefecture').classList.toggle('has-selection', Boolean(pref));
+  $('#visit-count-input').value = pref ? state.counts[pref.id] : 0;
+  updateEntryPreview();
 }
 function updateEntryPreview() {
   const id = Number($('#visit-prefecture').value);
-  const reason = REASONS.find(r => r.id === $('#visit-form').elements.namedItem('reason').value);
   const pref = PREFECTURES.find(p => p.id === id);
-  if (!pref || !reason) {
+  const count = $('#visit-count-input').valueAsNumber;
+  const valid = validCount(count);
+  $('#count-minus').disabled = !valid || count === 0;
+  $('#count-plus').disabled = !valid || count === MAX_COUNT;
+  $('#save-visit').disabled = !pref || !valid;
+  $$('[data-count-preset]').forEach(button => {
+    const active = valid && Number(button.dataset.countPreset) === count;
+    button.classList.toggle('active', active); button.setAttribute('aria-pressed', active);
+  });
+  if (!pref || !valid) {
     $('#entry-score').textContent = '—';
-    $('#entry-formula').textContent = '都道府県と理由を選択してください';
+    $('#entry-formula').textContent = !pref ? '地図から都道府県を選択してください' : `0〜${format(MAX_COUNT)}回の整数で指定してください`;
     return;
   }
   const multiplier = state.multipliers[pref.region];
-  $('#entry-score').textContent = `${format(Math.round(reason.points * multiplier * 100) / 100)} pt`;
-  $('#entry-formula').textContent = `${reason.name} ${reason.points}点 × ${REGIONS.find(r => r.id === pref.region).name} ${format(multiplier)}倍`;
+  $('#entry-score').textContent = `${format(Math.round(count * multiplier * 100) / 100)} pt`;
+  $('#entry-formula').textContent = `${format(count)}回 × ${REGIONS.find(r => r.id === pref.region).name} ${format(multiplier)}倍`;
 }
-$('#visit-form').addEventListener('change', updateEntryPreview);
+$('#visit-count-input').addEventListener('input', updateEntryPreview);
+$('#count-minus').addEventListener('click', () => { $('#visit-count-input').value = Math.max(0, $('#visit-count-input').valueAsNumber - 1); updateEntryPreview(); });
+$('#count-plus').addEventListener('click', () => { $('#visit-count-input').value = Math.min(MAX_COUNT, $('#visit-count-input').valueAsNumber + 1); updateEntryPreview(); });
+$$('[data-count-preset]').forEach(button => button.addEventListener('click', () => { $('#visit-count-input').value = button.dataset.countPreset; updateEntryPreview(); }));
 $('#visit-form').addEventListener('submit', event => {
   event.preventDefault();
   if (!$('#visit-form').reportValidity()) return;
   try {
-    const record = validateVisit({ id: editingId || crypto.randomUUID(), date: $('#visit-date').value, prefectureId: Number($('#visit-prefecture').value), reasonId: $('#visit-form').elements.namedItem('reason').value });
-    const edited = Boolean(editingId);
-    if (editingId) {
-      const index = state.visits.findIndex(v => v.id === editingId);
-      if (index < 0) throw new Error('編集対象の記録が見つかりません。');
-      state.visits[index] = record;
-    } else {
-      if (state.visits.length >= 100000) throw new Error('登録できる記録は100,000件までです。');
-      state.visits.push(record);
-    }
-    persist(); resetEntry(); updateUI();
-    if (!storageIssue) toast(edited ? '来訪記録を更新しました。' : '来訪を登録しました。地図と集計に反映されました。');
+    const id = Number($('#visit-prefecture').value);
+    const count = $('#visit-count-input').valueAsNumber;
+    setPrefectureCount(state, id, count);
+    persist(); updateUI();
+    if (!storageIssue) toast(`${PREFECTURES[id - 1].name}の累計回数を${format(count)}回に更新しました。`);
   } catch (error) { toast(error.message); }
 });
 function resetEntry() {
-  editingId = null;
-  $('#visit-form').reset(); $('#visit-date').value = '';
-  $('#entry-heading').textContent = '来訪を記録する';
-  $('#save-visit').innerHTML = `来訪を登録${icon('check')}`;
-  $('#cancel-edit').hidden = true; updateEntryPreview();
+  $('#visit-form').reset(); selectEntryPrefecture(null);
 }
-$('#cancel-edit').addEventListener('click', resetEntry);
 function renderHistory() {
-  const prefFilter = $('#history-prefecture').value;
-  const reasonFilter = $('#history-reason').value;
-  const visits = state.visits.filter(v => {
-    const pref = PREFECTURES[v.prefectureId - 1];
-    return (prefFilter === 'all' || String(v.prefectureId) === prefFilter || pref.region === prefFilter) && (reasonFilter === 'all' || v.reasonId === reasonFilter);
-  }).sort((a, b) => b.date.localeCompare(a.date));
-  $('#history-count').textContent = `${format(visits.length)}件の記録`;
-  const legacyTotal = Object.values(state.legacyCounts).reduce((a, b) => a + b, 0);
-  const legacy = legacyTotal ? `<p class="legacy-note">旧形式の記録 ${format(legacyTotal)}回は、日程・理由不明のため1回＝1点として別途集計しています。</p>` : '';
-  if (!visits.length) {
-    $('#visit-history').innerHTML = `${legacy}<div class="history-empty">${icon('luggage')}<h3>${state.visits.length ? '条件に合う来訪記録がありません' : 'まだ来訪記録がありません'}</h3><p>日程・都道府県・理由を選んで、最初の来訪を記録しましょう。</p></div>`;
+  const region = $('#history-prefecture').value;
+  const onlyVisited = $('#visited-only').checked;
+  const prefs = summarize(state).prefectures.filter(p => (region === 'all' || p.region === region) && (!onlyVisited || p.visits > 0));
+  $('#history-count').textContent = `${prefs.length}都道府県`;
+  if (!prefs.length) {
+    $('#visit-history').innerHTML = `<div class="history-empty">${icon('map')}<h3>条件に合う都道府県がありません</h3><p>地方や「訪問済みのみ」の条件を変えてください。</p></div>`;
     return;
   }
-  $('#visit-history').innerHTML = legacy + `<div class="history-table-wrap"><table class="history-table"><thead><tr><th scope="col">日程</th><th scope="col">都道府県</th><th scope="col">来訪理由</th><th scope="col">得点</th><th scope="col"><span class="sr-only">操作</span></th></tr></thead><tbody>${visits.map(v => {
-    const p = PREFECTURES[v.prefectureId - 1];
-    const r = REASONS.find(r => r.id === v.reasonId);
-    const multiplier = state.multipliers[p.region];
-    return `<tr><td>${v.date.replaceAll('-', '.')}</td><td>${p.name}</td><td>${r.name}<small>${r.points}点 × ${format(multiplier)}倍</small></td><td><strong>${format(Math.round(r.points * multiplier * 100) / 100)}</strong> pt</td><td><div class="history-actions"><button type="button" data-edit="${v.id}" aria-label="${v.date} ${p.name} ${r.name}の記録を編集">編集</button><button type="button" data-delete="${v.id}" aria-label="${v.date} ${p.name} ${r.name}の記録を削除">削除</button></div></td></tr>`;
-  }).join('')}</tbody></table></div>`;
+  $('#visit-history').innerHTML = `<div class="history-table-wrap"><table class="history-table"><thead><tr><th scope="col">都道府県</th><th scope="col">地方</th><th scope="col">行った回数</th><th scope="col">得点</th></tr></thead><tbody>${prefs.map(p => `<tr><td>${p.name}</td><td>${REGIONS.find(r => r.id === p.region).name}</td><td><strong>${format(p.visits)}</strong> 回</td><td><strong>${format(p.score)}</strong> pt<small>${format(p.visits)}回 × ${format(state.multipliers[p.region])}倍</small></td></tr>`).join('')}</tbody></table></div>`;
 }
 $('#history-prefecture').addEventListener('change', renderHistory);
-$('#history-reason').addEventListener('change', renderHistory);
-$('#visit-history').addEventListener('click', event => {
-  const edit = event.target.closest('[data-edit]');
-  const remove = event.target.closest('[data-delete]');
-  if (edit) {
-    const visit = state.visits.find(v => v.id === edit.dataset.edit);
-    if (!visit) return;
-    editingId = visit.id; $('#visit-date').value = visit.date;
-    $('#visit-prefecture').value = visit.prefectureId;
-    $('#visit-form').elements.namedItem('reason').value = visit.reasonId;
-    $('#entry-heading').textContent = '来訪記録を編集する';
-    $('#save-visit').innerHTML = `変更を保存${icon('check')}`; $('#cancel-edit').hidden = false;
-    updateEntryPreview(); $('#visit-form').scrollIntoView({ block: 'center' }); $('#visit-date').focus({ preventScroll: true });
-  }
-  if (remove) {
-    const visit = state.visits.find(v => v.id === remove.dataset.delete);
-    if (!visit) return;
-    const p = PREFECTURES[visit.prefectureId - 1]; const r = REASONS.find(r => r.id === visit.reasonId);
-    confirmAction('この来訪記録を削除しますか？', `${visit.date}・${p.name}・${r.name}の記録を削除します。\n来訪回数と得点も再計算されます。`, '削除する', () => {
-      state.visits = state.visits.filter(v => v.id !== visit.id);
-      if (editingId === visit.id) resetEntry();
-      persist(); updateUI(); if (!storageIssue) toast('来訪記録を削除しました。');
-    });
-  }
-});
-function renderReasonSummary(summary) {
-  $('#reason-summary').innerHTML = summary.reasons.map(r => `<div class="reason-stat"><span class="eyebrow">${r.points} POINT${r.points > 1 ? 'S' : ''} / VISIT</span><h3>${r.name}</h3><p><strong>${format(r.count)}</strong>回 <span>× ${r.points}点</span></p><div>地方倍率を反映 <b>${format(r.score)} pt</b></div></div>`).join('');
-}
+$('#visited-only').addEventListener('change', renderHistory);
 
 function route() {
   const parts = location.hash.slice(1).split('/');
@@ -200,8 +166,8 @@ function route() {
     el.classList.toggle('active', active);
     if (active) el.setAttribute('aria-current', 'page'); else el.removeAttribute('aria-current');
   });
-  $('#page-title').textContent = recording ? '会いに行った、その日を記録。' : '旅の足あとを、日本地図に。';
-  $('#page-subtitle').textContent = recording ? '日程・都道府県・来訪理由。ひとつの記録が、次の足あとに。' : '訪れた場所も、何度も通った街も。あなたの旅を、ひとつずつ。';
+  $('#page-title').textContent = recording ? '地図を選んで、回数を記録。' : '旅の足あとを、日本地図に。';
+  $('#page-subtitle').textContent = recording ? '行った場所と、行った回数。あなたの旅をシンプルに。' : '訪れた場所も、何度も通った街も。あなたの旅を、ひとつずつ。';
   if (recording && REGIONS.some(r => r.id === parts[1])) {
     $('#history-prefecture').value = parts[1]; renderHistory();
   }
@@ -237,7 +203,7 @@ async function loadMap() {
     $('#download-map').disabled = false;
   } catch {
     $('#open-prefecture-picker').disabled = true;
-    $('#prefecture-picker-hint').textContent = '地図を読み込めませんでした。一覧から選択してください。';
+    $('#prefecture-picker-hint').textContent = '地図を読み込めませんでした。ページを再読み込みしてください。';
     $('#map-stage').innerHTML = '<div class="map-loading">地図を読み込めませんでした。<a href="#record">一覧から記録する →</a></div>';
     $('#download-map').disabled = true;
     $('#zoom-in').disabled = true;
@@ -288,8 +254,8 @@ $('#picker-map-stage').addEventListener('keydown', event => {
 });
 $('#confirm-prefecture').addEventListener('click', () => {
   if (!pickerPrefectureId) return;
-  $('#visit-prefecture').value = pickerPrefectureId;
-  updateEntryPreview();
+  if (Number($('#visit-prefecture').value) !== pickerPrefectureId) selectEntryPrefecture(pickerPrefectureId);
+  else updateEntryPreview();
   $('#prefecture-picker-dialog').close();
 });
 $('#picker-zoom-in').addEventListener('click', () => setPickerZoom(pickerZoom + .5));
@@ -346,12 +312,12 @@ function openPref(id) {
   $('#pref-dialog-title').textContent = pref.name;
   $('#pref-dialog-region').textContent = REGIONS.find(r => r.id === pref.region).en;
   $('#pref-results').innerHTML = `<div><span>得点</span><strong>${format(pref.score)}<small>pt</small></strong></div><div><span>来訪回数</span><strong>${format(pref.visits)}<small>回</small></strong></div>`;
-  $('#pref-reason-breakdown').innerHTML = `<div class="pref-breakdown">${REASONS.map(r => `<p><span>${r.name}</span><span>${pref.reasons[r.id]}回 × ${r.points}点 × ${format(multiplier)}倍</span></p>`).join('')}${state.legacyCounts[id] ? `<p><span>旧形式の記録</span><span>${state.legacyCounts[id]}回 × 1点 × ${format(multiplier)}倍</span></p>` : ''}</div>`;
+  $('#pref-calculation').innerHTML = `<p class="pref-count-formula">${format(pref.visits)}回 × ${format(multiplier)}倍 ＝ ${format(pref.score)} pt</p>`;
   showDialog($('#pref-dialog'));
 }
 $('#pref-add').addEventListener('click', () => {
   $('#pref-dialog').close(); resetEntry();
-  location.hash = '#record'; $('#visit-prefecture').value = currentPref.id; updateEntryPreview();
+  location.hash = '#record'; selectEntryPrefecture(currentPref.id);
   window.scrollTo({ top: 0 });
 });
 
@@ -404,8 +370,8 @@ $('#import-file').addEventListener('change', async event => {
     });
   } catch (error) { toast(error instanceof SyntaxError ? 'JSONファイルを読み込めませんでした。' : error.message); }
 });
-$('#reset-data').addEventListener('click', () => confirmAction('来訪記録をリセットしますか？', 'すべての日程・都道府県・理由の来訪記録を削除します。\n元に戻すにはバックアップが必要です。地方の倍率は維持されます。', 'リセットする', () => {
-  state.visits = []; state.legacyCounts = emptyState().legacyCounts; resetEntry(); persist(); updateUI(); $('#settings-dialog').close();
+$('#reset-data').addEventListener('click', () => confirmAction('来訪記録をリセットしますか？', 'すべての都道府県の来訪回数を0回に戻します。\n元に戻すにはバックアップが必要です。地方の倍率は維持されます。', 'リセットする', () => {
+  state.counts = emptyState().counts; resetEntry(); persist(); updateUI(); $('#settings-dialog').close();
   if (!storageIssue) toast('来訪記録をリセットしました。');
 }));
 

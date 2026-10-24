@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f6f5ef">
+  <meta name="description" content="47都道府県の来訪を記録して、あなただけの日本地図を。地方ごとの倍率にも対応した旅のカウンター。">
+  <title>たびのあと｜都道府県カウンター</title>
+  <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./styles.css">
+  <script type="module" src="./app.js"></script>
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="#map" aria-label="たびのあと ホーム"><span class="brand-mark" data-icon="route"></span><span>たびのあと<small>JAPAN TRAVEL COUNTER</small></span></a>
+    <nav class="view-nav" aria-label="メインナビゲーション"><a href="#map" data-view="map"><span data-icon="map"></span>旅のマップ</a><a href="#record" data-view="record"><span data-icon="edit"></span>来訪を記録</a></nav>
+    <button class="settings-button" id="open-settings" aria-label="設定"><span data-icon="sliders"></span><span>設定</span></button>
+  </header>
+  <main>
+    <section class="page-intro"><div><p class="eyebrow">COLLECT PLACES, KEEP MEMORIES.</p><h1 id="page-title">旅の足あとを、日本地図に。</h1><p id="page-subtitle">訪れた場所も、何度も通った街も。あなたの旅を、ひとつずつ。</p></div><div class="save-state" id="save-status" role="status"><i></i>このブラウザに自動保存</div></section>
+    <section id="map-view" aria-label="旅のマップ">
+      <div class="dashboard-grid">
+        <div class="map-card">
+          <div class="map-card-header"><div><p class="eyebrow">MY JAPAN MAP</p><h2>わたしの旅の地図</h2></div><button class="text-button" id="download-map"><span data-icon="download"></span>画像を保存</button></div>
+          <div class="map-mode" role="group" aria-label="地図の表示を切り替え"><button class="active" type="button" data-metric="score" aria-pressed="true">得点 <span>pt</span></button><button type="button" data-metric="visits" aria-pressed="false">来訪回数 <span>回</span></button></div>
+          <div class="map-stage hide-names" id="map-stage"><div id="map-loading" class="map-loading">地図を読み込んでいます…</div></div>
+          <div class="map-bottom"><div class="legend"><span><i class="legend-dot visited"></i>訪問済み</span><span><i class="legend-dot"></i>未訪問</span><label><input type="checkbox" id="show-names">県名を表示</label></div><div class="map-zoom"><button id="zoom-out" aria-label="地図を縮小" disabled>−</button><button id="zoom-reset" aria-label="地図の倍率をリセット">100%</button><button id="zoom-in" aria-label="地図を拡大">＋</button></div></div>
+          <p class="map-hint"><span data-icon="pointer"></span>都道府県を選ぶと、得点と来訪回数を確認できます</p>
+        </div>
+        <aside class="journey-sidebar" aria-label="旅の集計">
+          <section class="score-card"><div class="score-heading"><p class="eyebrow">YOUR TRAVEL SCORE</p><span class="small-compass" data-icon="compass"></span></div><h2>旅の合計得点</h2><div class="score-number"><strong id="total-score">0</strong><span>pt</span></div><div class="score-note"><span id="score-rule">理由の点数 × 地方の倍率</span><button id="score-settings" aria-label="得点の倍率を設定"><span data-icon="arrow-up-right"></span></button></div></section>
+          <section class="progress-card"><div class="section-label"><h2>全国制覇まで</h2><span id="completion-rate">0%</span></div><p class="visited-number"><strong id="visited-count">0</strong><span>/ 47 都道府県</span></p><div class="progress-track" role="progressbar" aria-label="訪問した都道府県の割合" aria-valuemin="0" aria-valuemax="47" aria-valuenow="0" id="national-progress"><span></span></div><div class="visit-total"><span>のべ来訪回数</span><span><strong id="visit-count">0</strong> 回</span></div><div class="visit-total"><span>これから出会う場所</span><span><strong id="remaining-count">47</strong> 都道府県</span></div></section>
+          <section class="next-trip"><div class="next-trip-icon" data-icon="luggage"></div><p class="eyebrow">THE JOURNEY CONTINUES</p><h2 id="journey-message">次の旅は、どこへ？</h2><p id="journey-description">小さな寄り道も、旅の足あと。<br>最初のひとつを記録してみましょう。</p><a class="primary-button" href="#record">来訪を記録する<span data-icon="arrow-right"></span></a></section>
+        </aside>
+      </div>
+      <section class="reason-summary-section"><div class="region-section-heading"><div><p class="eyebrow">POINTS BY REASON</p><h2>理由ごとの得点</h2></div><span>件数 × 理由の点数 × 地方の倍率</span></div><div id="reason-summary" class="reason-summary"></div></section>
+      <section class="regions-section"><div class="region-section-heading"><div><p class="eyebrow">EXPLORE BY REGION</p><h2>地方ごとの足あと</h2></div><span>まだ見ぬ景色に、会いにいこう。</span></div><div class="region-grid" id="region-grid"></div></section>
+    </section>
+    <section id="record-view" aria-label="来訪を記録" hidden>
+      <div class="record-summary"><span>訪問済み <strong id="record-visited">0</strong> / 47</span><span>のべ来訪回数 <strong id="record-total">0</strong> 回</span><a href="#map">結果を地図で見る<span data-icon="arrow-right"></span></a></div>
+      <div class="entry-layout"><section class="entry-card"><p class="eyebrow">ADD A NEW MEMORY</p><h2 id="entry-heading">来訪を記録する</h2><form id="visit-form">
+        <label class="entry-field" for="visit-date"><span><b>01</b>日程（年月日）</span><input type="date" id="visit-date" name="date" min="1900-01-01" max="9999-12-31" required></label>
+        <label class="entry-field" for="visit-prefecture"><span><b>02</b>都道府県</span><select id="visit-prefecture" name="prefecture" required><option value="">選択してください</option></select></label>
+        <fieldset class="reason-fieldset"><legend><b>03</b>来訪理由</legend><div id="reason-options" class="reason-options"></div></fieldset>
+        <div class="entry-preview"><span>この来訪の得点</span><strong id="entry-score">—</strong><p id="entry-formula">都道府県と理由を選択してください</p></div>
+        <div class="entry-actions"><button type="button" class="text-button" id="cancel-edit" hidden>編集をキャンセル</button><button type="submit" class="primary-button" id="save-visit">来訪を登録<span data-icon="check"></span></button></div>
+      </form></section><aside class="entry-guide"><p class="eyebrow">EVERY VISIT COUNTS</p><h2>会いに行った日を、<br>ひとつずつ。</h2><p>日程・都道府県・来訪理由を選んで登録。<br>1件の記録が、1回の来訪になります。</p><div class="guide-formula">理由の点数 × 地方の倍率<br><span>すべての来訪の得点を足して合計します</span></div><p>地図は「得点」「来訪回数」を切り替えて<br>どちらの結果も確認できます。</p></aside></div>
+      <section class="history-section"><div class="region-section-heading"><div><p class="eyebrow">YOUR VISIT HISTORY</p><h2>これまでの来訪記録</h2></div><span id="history-count">0件の記録</span></div><div class="history-filter"><label>都道府県<select id="history-prefecture"><option value="all">すべて</option></select></label><label>理由<select id="history-reason"><option value="all">すべて</option></select></label></div><div id="visit-history"></div></section>
+    </section>
+  </main>
+  <footer class="site-footer"><span class="footer-brand">たびのあと <span>ひとつの旅、ひとつの足あと。</span></span><span>記録はこのブラウザに保存されます。<button id="footer-backup">バックアップ</button><a href="https://github.com/lalamalink/japan-map-svg" target="_blank" rel="noopener noreferrer">Map by lalamalink · CC0</a></span></footer>
+  <dialog id="pref-dialog" aria-labelledby="pref-dialog-title"><button class="dialog-close icon-button" data-close aria-label="閉じる"><span data-icon="close"></span></button><p class="eyebrow" id="pref-dialog-region"></p><h2 id="pref-dialog-title"></h2><div class="pref-results" id="pref-results"></div><div id="pref-reason-breakdown"></div><button class="primary-button full-width" id="pref-add">この都道府県への来訪を登録<span data-icon="arrow-right"></span></button></dialog>
+  <dialog id="settings-dialog" class="settings-dialog" aria-labelledby="settings-title"><button class="dialog-close icon-button" data-close aria-label="閉じる"><span data-icon="close"></span></button><p class="eyebrow">MAKE IT YOUR OWN</p><h2 id="settings-title">旅の設定</h2><div class="settings-section"><h3>地方ごとの得点倍率</h3><p>理由の点数 × 地方の倍率 ＝ 得点。<br>理由ごとの点数は画像に合わせた1〜5点です。<br>倍率を変えても、日程や来訪理由はそのままです。</p><form id="multiplier-form"><div class="multiplier-grid" id="multiplier-grid"></div><p class="field-hint">0〜100倍、小数第2位まで設定できます。</p><div class="settings-actions"><button type="button" class="text-button" id="default-multipliers">すべて1倍に戻す</button><button class="primary-button" type="submit">倍率を保存<span data-icon="check"></span></button></div></form></div><div class="settings-section"><h3>記録のバックアップ</h3><p>機種変更やブラウザのデータ削除に備えて、<br>記録を書き出して保管できます。</p><div class="backup-actions"><button class="secondary-button" id="export-data"><span data-icon="download"></span>書き出す</button><button class="secondary-button" id="import-data"><span data-icon="upload"></span>読み込む</button></div><input type="file" id="import-file" accept="application/json,.json" hidden></div><div class="settings-section danger-section"><h3>記録のリセット</h3><p>登録した来訪記録をすべて削除します。</p><button class="text-button danger" id="reset-data">来訪記録をリセット</button></div></dialog>
+  <dialog id="confirm-dialog" aria-labelledby="confirm-title"><p class="eyebrow">YOUR TRAVEL RECORDS</p><h2 id="confirm-title"></h2><p class="dialog-description" id="confirm-description"></p><div class="confirm-actions"><button class="secondary-button" data-close>キャンセル</button><button class="primary-button" id="confirm-action">実行する</button></div></dialog>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <noscript><p class="noscript">このアプリを使うには、JavaScriptを有効にしてください。</p></noscript>
+</body>
+</html>
